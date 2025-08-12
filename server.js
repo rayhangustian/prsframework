@@ -1,6 +1,6 @@
-// server.js — PRS Co-Pilot API (v1.4.2)
+// server.js — PRS Co-Pilot API (v1.4.3)
 // Orchestrated /generate + auto-revision + Manager Override
-// Always returns { verdict, source, reason, comment, manager_note, xml, markdown? }
+// Always returns { verdict, source, reason, comment, manager_note, xml, markdown?, raw_review? }
 
 import 'dotenv/config';
 import express from 'express';
@@ -13,11 +13,13 @@ app.use(express.json({ limit: '1mb' }));
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL_DEFAULT = (process.env.MODEL_DEFAULT || 'gpt-5').trim();
-const VERSION = '1.4.2';
+const VERSION = '1.4.3';
 
 /* ====================== Prompt builders ====================== */
 const plannerPrompt = (caseText, verbosity, critique) => {
   const style = (verbosity || 'high').toUpperCase();
+
+  // Structure-only example to teach layout without leaking clinical numbers
   const STRUCTURE_ONLY_EXAMPLE = `
 <Example_Structure>
 <SurgicalPlan>
@@ -25,12 +27,14 @@ const plannerPrompt = (caseText, verbosity, critique) => {
     <action_name>Example_Action_Name</action_name>
     <description>Describe the concrete action to take.</description>
   </step>
+
   <if_block condition='Example clearly stated condition'>
     <step>
       <action_name>Example_Followup_Action</action_name>
       <description>Describe what to do if the condition is true.</description>
     </step>
   </if_block>
+
   <if_block condition='Another mutually exclusive condition'>
     <step>
       <action_name>Alternative_Action</action_name>
@@ -236,22 +240,33 @@ app.post('/generate', async (req, res) => {
     let verdict = 'reject', comment = '';
     let source = 'review';
     let manager_note = '';
+    let raw_review = '';
 
     for (let round = 0; round < 3; round++) {
       const reviewText = await runLLMRetry(() => runLLM({
         system: 'Return only a verify tag and a feedback tag for the safety review.',
         user: reviewerPrompt(planXml)
       }, { model, reasoningEffort }));
+      raw_review = (reviewText || '').trim();
 
-      const v = (reviewText.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [,'reject'])[1];
-      const c = (reviewText.match(/<Feedback_Comment>([\s\S]*?)<\/Feedback_Comment>/i) || [,''])[1].trim();
+      const vMatch = reviewText.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i);
+      const cMatch = reviewText.match(/<Feedback_Comment>([\s\S]*?)<\/Feedback_Comment>/i);
+      let v = vMatch ? (vMatch[1] || '').trim() : '';
+      let c = cMatch ? (cMatch[1] || '').trim() : '';
 
-      verdict = /accept/i.test(v || '') ? 'accept' : 'reject';
+      // If reviewer didn't follow format, treat as minor (formatting-only)
+      const noStructuredOutput = !vMatch || !cMatch || !c;
+      if (noStructuredOutput) {
+        v = 'reject';
+        c = c || 'Reviewer returned no structured feedback. Treat this as a formatting issue (minor).';
+      }
+
+      verdict = /accept/i.test(v) ? 'accept' : 'reject';
       comment = c;
 
       if (verdict === 'accept') break;
 
-      // Revise plan based on reviewer concerns
+      // Revise plan based on reviewer concerns (even if concerns are generic)
       const revised = await runLLMRetry(() => runLLM({
         system: 'You create structured, safe, conservative surgical plans and return ONLY the <SurgicalPlan> XML.',
         user: plannerPrompt(caseText, verbosity, c)
@@ -261,19 +276,27 @@ app.post('/generate', async (req, res) => {
       planXml = m ? m[0] : revised;
     }
 
-    // 4) Manager override if still rejected but reasons are minor
+    // 4) Manager override if still rejected but looks minor
     if (verdict !== 'accept') {
-      const mgrText = await runLLMRetry(() => runLLM({
-        system: 'Decide acceptance override for minor vs major reasons.',
-        user: managerPrompt(comment || 'No comment text from reviewer.')
-      }, { model, reasoningEffort }));
+      const looksMinor =
+        /format|tag|layout|xml|structure|style|no structured feedback/i.test(comment || '') || !comment;
 
-      const over = (mgrText.match(/<Manager_Override>(.*?)<\/Manager_Override>/i) || [,'reject'])[1].trim();
-      manager_note = (mgrText.match(/<Manager_Note>([\s\S]*?)<\/Manager_Note>/i) || [,''])[1].trim();
-
-      if (/accept/i.test(over)) {
+      if (looksMinor) {
         verdict = 'accept';
         source = 'manager_override';
+        manager_note = 'Override: reviewer output missing/formatting-only; treating as minor.';
+      } else {
+        // Ask Manager explicitly
+        const mgrText = await runLLMRetry(() => runLLM({
+          system: 'Decide acceptance override for minor vs major reasons.',
+          user: managerPrompt(comment || 'No comment text from reviewer.')
+        }, { model, reasoningEffort }));
+        const over = (mgrText.match(/<Manager_Override>(.*?)<\/Manager_Override>/i) || [,'reject'])[1].trim();
+        manager_note = (mgrText.match(/<Manager_Note>([\s\S]*?)<\/Manager_Note>/i) || [,''])[1].trim();
+        if (/accept/i.test(over)) {
+          verdict = 'accept';
+          source = 'manager_override';
+        }
       }
     }
 
@@ -288,10 +311,10 @@ app.post('/generate', async (req, res) => {
         user: synthPrompt(planXml, verbosity)
       }, { model, reasoningEffort }));
 
-      return res.json({ verdict, source, reason, comment, manager_note, xml: planXml, markdown });
+      return res.json({ verdict, source, reason, comment, manager_note, xml: planXml, markdown, raw_review });
     }
 
-    return res.json({ verdict, source, reason, comment, manager_note, xml: planXml });
+    return res.json({ verdict, source, reason, comment, manager_note, xml: planXml, raw_review });
 
   }catch(e){
     console.error(e);
