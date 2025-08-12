@@ -1,4 +1,8 @@
-// server.js — PRS Co-Pilot API (with /generate orchestration + structure-only example)
+// server.js — PRS Co-Pilot API
+// Orchestrated /generate with auto-revision + Manager Override,
+// Reviewer tuned to accept unless safety-critical omissions exist.
+// Supports OpenAI Responses (gpt-5 / o3*) and Chat (gpt-4o / 4o-mini).
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -15,7 +19,6 @@ const MODEL_DEFAULT = (process.env.MODEL_DEFAULT || 'gpt-5').trim();
 const plannerPrompt = (caseText, verbosity, critique) => {
   const style = (verbosity || 'high').toUpperCase();
 
-  // Structure-only example (no clinical numbers) to teach tag layout safely
   const STRUCTURE_ONLY_EXAMPLE = `
 <Example_Structure>
 <SurgicalPlan>
@@ -72,8 +75,13 @@ const reviewerPrompt = (xml, verbosity) => {
 
 Decision rule:
 - ACCEPT if the plan meets minimum oncologic and reconstructive standards and includes reasonable contingencies.
-- REJECT only for patient-safety risks or major omissions (e.g., no margin strategy, no nodal management when indicated, no reconstruction for large defect, or no contingency planning).
-- Do NOT reject for formatting, tag naming, or style issues—give suggestions in feedback instead.
+- REJECT only for *patient-safety critical* or *major omissions*, for example:
+  • No margin strategy for ablation
+  • No nodal management when indicated
+  • No reconstruction plan for a large defect
+  • No contingency planning for common intra-op problems
+  • Unsafe airway strategy
+- Do NOT reject for formatting/tag naming/style/wording issues—list those as suggestions in feedback.
 
 Proposed Surgical Plan to Review:
 ${xml}
@@ -84,8 +92,21 @@ Evaluation Checklist:
 3. Contingency Planning (common pitfalls anticipated with actions).
 4. Clarity and Logic (stepwise and unambiguous).
 
-Return ONLY the two tags below on one line (no extra text before or after):
-<SurgicalBoard_Verify>accept|reject</SurgicalBoard_Verify><Feedback_Comment>{Concise rationale referencing the checklist; max 1200 chars}</Feedback_Comment>`;
+Return ONLY the tags below on ONE line (no extra text/spaces around):
+<SurgicalBoard_Verify>accept|reject</SurgicalBoard_Verify><Feedback_Comment>{Concise rationale; max 1200 chars}</Feedback_Comment>`;
+};
+
+const managerPrompt = (reviewText) => {
+  return `You are the Manager of the Surgical Review Board. Decide whether the REJECTION reasons below are safety-critical/major or minor.
+If the reasons are MINOR (formatting/wording/level-of-detail), output:
+<Manager_Override>accept</Manager_Override><Manager_Note>Concise reason</Manager_Note>
+If the reasons are MAJOR (patient safety or major omission), output:
+<Manager_Override>reject</Manager_Override><Manager_Note>Concise reason</Manager_Note>
+
+Reviewer feedback to evaluate:
+${reviewText}
+
+Return only the two tags on one line.`;
 };
 
 const synthPrompt = (xml, verbosity) => {
@@ -113,7 +134,7 @@ function extractText(resp){
       || '';
 }
 
-async function runLLM({ system, user }, { model, reasoningEffort, verbosity }) {
+async function runLLM({ system, user }, { model, reasoningEffort }) {
   const mdl = (model || MODEL_DEFAULT).trim();
 
   if (isResponsesModel(mdl)) {
@@ -125,13 +146,11 @@ async function runLLM({ system, user }, { model, reasoningEffort, verbosity }) {
         { role: 'user', content: user },
       ],
       ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {})
-      // Verbosity baked into the prompt; not sent as param to avoid 400s
     };
     const resp = await client.responses.create(payload);
     return extractText(resp);
   }
 
-  // Non-reasoning models (gpt-4o / 4o-mini)
   const chat = await client.chat.completions.create({
     model: mdl,
     temperature: 0.2,
@@ -149,7 +168,7 @@ async function runLLMRetry(fn, { tries = 3, baseDelay = 600 } = {}) {
     try { return await fn(); }
     catch (e) {
       lastErr = e;
-      const sleep = baseDelay * Math.pow(1.6, i) + Math.random() * 300; // backoff + jitter
+      const sleep = baseDelay * Math.pow(1.6, i) + Math.random() * 300;
       await new Promise(r => setTimeout(r, sleep));
     }
   }
@@ -165,7 +184,7 @@ app.post('/plan', async (req, res) => {
     const content = await runLLM({
       system: 'You create structured, safe, conservative surgical plans and return ONLY the <SurgicalPlan> XML.',
       user: plannerPrompt(caseText, verbosity)
-    }, { model, reasoningEffort, verbosity });
+    }, { model, reasoningEffort });
 
     const m = content.match(/<SurgicalPlan[\s\S]*?<\/SurgicalPlan>/i);
     res.json({ xml: m ? m[0] : content });
@@ -180,7 +199,7 @@ app.post('/review', async (req, res) => {
     const content = await runLLM({
       system: 'Return only a verify tag and a feedback tag for the safety review.',
       user: reviewerPrompt(plannerXml, verbosity)
-    }, { model, reasoningEffort, verbosity: 'medium' });
+    }, { model, reasoningEffort });
 
     const v = (content.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [,'reject'])[1];
     const c = (content.match(/<Feedback_Comment>([\s\S]*?)<\/Feedback_Comment>/i) || [,''])[1].trim();
@@ -196,13 +215,13 @@ app.post('/synthesize', async (req, res) => {
     const content = await runLLM({
       system: 'You write clean, professional operative plans in Markdown.',
       user: synthPrompt(approvedPlannerXml, verbosity)
-    }, { model, reasoningEffort, verbosity });
+    }, { model, reasoningEffort });
 
     res.json({ markdown: content });
   }catch(e){ console.error(e); res.status(500).json({ error: 'synth_failed' }); }
 });
 
-/* -------------------- Orchestrated flow with auto-revision -------------------- */
+/* -------------------- Orchestrated flow (+ Manager Override) -------------------- */
 app.post('/generate', async (req, res) => {
   try{
     const { caseText, model, reasoningEffort, verbosity } = req.body || {};
@@ -212,7 +231,7 @@ app.post('/generate', async (req, res) => {
     let planText = await runLLMRetry(() => runLLM({
       system: 'You create structured, safe, conservative surgical plans and return ONLY the <SurgicalPlan> XML.',
       user: plannerPrompt(caseText, verbosity)
-    }, { model, reasoningEffort, verbosity }));
+    }, { model, reasoningEffort }));
 
     let m = planText.match(/<SurgicalPlan[\s\S]*?<\/SurgicalPlan>/i);
     let planXml = m ? m[0] : planText;
@@ -223,7 +242,7 @@ app.post('/generate', async (req, res) => {
       const reviewText = await runLLMRetry(() => runLLM({
         system: 'Return only a verify tag and a feedback tag for the safety review.',
         user: reviewerPrompt(planXml, 'medium')
-      }, { model, reasoningEffort, verbosity: 'medium' }));
+      }, { model, reasoningEffort }));
 
       const v = (reviewText.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [,'reject'])[1];
       const c = (reviewText.match(/<Feedback_Comment>([\s\S]*?)<\/Feedback_Comment>/i) || [,''])[1].trim();
@@ -237,21 +256,35 @@ app.post('/generate', async (req, res) => {
       const revised = await runLLMRetry(() => runLLM({
         system: 'You create structured, safe, conservative surgical plans and return ONLY the <SurgicalPlan> XML.',
         user: plannerPrompt(caseText, verbosity, c)
-      }, { model, reasoningEffort, verbosity }));
+      }, { model, reasoningEffort }));
 
       m = revised.match(/<SurgicalPlan[\s\S]*?<\/SurgicalPlan>/i);
       planXml = m ? m[0] : revised;
     }
 
+    // 4) Manager override if still rejected but reasons are minor
     if (verdict !== 'accept') {
-      return res.json({ verdict, comment, xml: planXml });
+      const mgrText = await runLLMRetry(() => runLLM({
+        system: 'Decide acceptance override for minor vs major reasons.',
+        user: managerPrompt(comment || 'No comment text from reviewer.')
+      }, { model, reasoningEffort }));
+
+      const over = (mgrText.match(/<Manager_Override>(.*?)<\/Manager_Override>/i) || [,'reject'])[1].trim();
+      const note = (mgrText.match(/<Manager_Note>([\s\S]*?)<\/Manager_Note>/i) || [,''])[1].trim();
+
+      if (/accept/i.test(over)) {
+        verdict = 'accept';
+        comment = (comment ? comment + ' ' : '') + `(Manager override: ${note})`;
+      } else {
+        return res.json({ verdict, comment, xml: planXml, manager_note: note });
+      }
     }
 
-    // 4) Synthesize final note
+    // 5) Synthesize final note
     const markdown = await runLLMRetry(() => runLLM({
       system: 'You write clean, professional operative plans in Markdown.',
       user: synthPrompt(planXml, verbosity)
-    }, { model, reasoningEffort, verbosity }));
+    }, { model, reasoningEffort }));
 
     return res.json({ verdict, comment, xml: planXml, markdown });
   }catch(e){
@@ -261,7 +294,7 @@ app.post('/generate', async (req, res) => {
 });
 
 /* -------------------- Health root -------------------- */
-app.get('/', (_req, res)=> res.json({ ok:true, service:'PRS Co-Pilot API (Responses/Chat Hybrid)' }));
+app.get('/', (_req, res)=> res.json({ ok:true, service:'PRS Co-Pilot API (Responses/Chat Hybrid + Manager Override)' }));
 
 const port = process.env.PORT || 8787;
 app.listen(port, ()=> console.log(`PRS Co-Pilot API listening on :${port}`));
