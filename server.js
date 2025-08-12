@@ -1,5 +1,5 @@
-// server.js — PRS Co-Pilot API
-// /generate orchestration + auto-revision + Manager Override
+// server.js — PRS Co-Pilot API (v1.4.2)
+// Orchestrated /generate + auto-revision + Manager Override
 // Always returns { verdict, source, reason, comment, manager_note, xml, markdown? }
 
 import 'dotenv/config';
@@ -13,12 +13,11 @@ app.use(express.json({ limit: '1mb' }));
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL_DEFAULT = (process.env.MODEL_DEFAULT || 'gpt-5').trim();
+const VERSION = '1.4.2';
 
 /* ====================== Prompt builders ====================== */
 const plannerPrompt = (caseText, verbosity, critique) => {
   const style = (verbosity || 'high').toUpperCase();
-
-  // Structure-only example to teach layout without leaking clinical numbers
   const STRUCTURE_ONLY_EXAMPLE = `
 <Example_Structure>
 <SurgicalPlan>
@@ -26,14 +25,12 @@ const plannerPrompt = (caseText, verbosity, critique) => {
     <action_name>Example_Action_Name</action_name>
     <description>Describe the concrete action to take.</description>
   </step>
-
   <if_block condition='Example clearly stated condition'>
     <step>
       <action_name>Example_Followup_Action</action_name>
       <description>Describe what to do if the condition is true.</description>
     </step>
   </if_block>
-
   <if_block condition='Another mutually exclusive condition'>
     <step>
       <action_name>Alternative_Action</action_name>
@@ -69,9 +66,8 @@ ${STRUCTURE_ONLY_EXAMPLE}
 ${critiqueBlock}`;
 };
 
-const reviewerPrompt = (xml, verbosity) => {
-  const style = (verbosity || 'medium').toUpperCase();
-  return `Role: You are a Surgical Review Board at a major teaching hospital. Your purpose is to evaluate a proposed surgical plan for safety, completeness, and adherence to standard of care. You are strict yet pragmatic. Write style: ${style} VERBOSITY.
+const reviewerPrompt = (xml) => {
+  return `Role: You are a Surgical Review Board at a major teaching hospital. Your purpose is to evaluate a proposed surgical plan for safety, completeness, and adherence to standard of care. You are strict yet pragmatic.
 
 Decision rule:
 - ACCEPT if the plan meets minimum oncologic and reconstructive standards and includes reasonable contingencies.
@@ -193,12 +189,12 @@ app.post('/plan', async (req, res) => {
 
 app.post('/review', async (req, res) => {
   try{
-    const { plannerXml, model, reasoningEffort, verbosity } = req.body || {};
+    const { plannerXml, model, reasoningEffort } = req.body || {};
     if(!plannerXml) return res.status(400).json({ error: 'Missing plannerXml' });
 
     const content = await runLLM({
       system: 'Return only a verify tag and a feedback tag for the safety review.',
-      user: reviewerPrompt(plannerXml, verbosity)
+      user: reviewerPrompt(plannerXml)
     }, { model, reasoningEffort });
 
     const v = (content.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [,'reject'])[1];
@@ -238,13 +234,13 @@ app.post('/generate', async (req, res) => {
 
     // 1..3) Review + up to 2 revisions
     let verdict = 'reject', comment = '';
-    let source = 'review';           // 'review' | 'manager_override'
+    let source = 'review';
     let manager_note = '';
 
     for (let round = 0; round < 3; round++) {
       const reviewText = await runLLMRetry(() => runLLM({
         system: 'Return only a verify tag and a feedback tag for the safety review.',
-        user: reviewerPrompt(planXml, 'medium')
+        user: reviewerPrompt(planXml)
       }, { model, reasoningEffort }));
 
       const v = (reviewText.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [,'reject'])[1];
@@ -281,13 +277,11 @@ app.post('/generate', async (req, res) => {
       }
     }
 
-    // Compose reason string for the UI
     const reason =
       source === 'manager_override'
         ? (comment ? `${comment}\n\nManager override: ${manager_note}` : `Manager override: ${manager_note}`)
         : (comment || '');
 
-    // 5) If accepted → synthesize; else return rejection + reason
     if (verdict === 'accept') {
       const markdown = await runLLMRetry(() => runLLM({
         system: 'You write clean, professional operative plans in Markdown.',
@@ -305,8 +299,16 @@ app.post('/generate', async (req, res) => {
   }
 });
 
-/* ====================== Health root ====================== */
-app.get('/', (_req, res)=> res.json({ ok:true, service:'PRS Co-Pilot API (Responses/Chat Hybrid + Manager Override)' }));
+/* ====================== Health & root ====================== */
+app.get('/health', (_req, res)=> {
+  res.json({
+    ok:true,
+    service:'PRS Co-Pilot API',
+    version: VERSION,
+    features: { generate:true, managerOverride:true, reason:true, structureExample:true }
+  });
+});
+app.get('/', (_req, res)=> res.redirect('/health'));
 
 const port = process.env.PORT || 8787;
-app.listen(port, ()=> console.log(`PRS Co-Pilot API listening on :${port}`));
+app.listen(port, ()=> console.log(`PRS Co-Pilot API v${VERSION} listening on :${port}`));
