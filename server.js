@@ -1,7 +1,6 @@
 // server.js — PRS Co-Pilot API
-// Orchestrated /generate with auto-revision + Manager Override,
-// Reviewer tuned to accept unless safety-critical omissions exist.
-// Supports OpenAI Responses (gpt-5 / o3*) and Chat (gpt-4o / 4o-mini).
+// /generate orchestration + auto-revision + Manager Override
+// Always returns { verdict, source, reason, comment, manager_note, xml, markdown? }
 
 import 'dotenv/config';
 import express from 'express';
@@ -15,10 +14,11 @@ app.use(express.json({ limit: '1mb' }));
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL_DEFAULT = (process.env.MODEL_DEFAULT || 'gpt-5').trim();
 
-/* -------------------- Prompt builders -------------------- */
+/* ====================== Prompt builders ====================== */
 const plannerPrompt = (caseText, verbosity, critique) => {
   const style = (verbosity || 'high').toUpperCase();
 
+  // Structure-only example to teach layout without leaking clinical numbers
   const STRUCTURE_ONLY_EXAMPLE = `
 <Example_Structure>
 <SurgicalPlan>
@@ -125,7 +125,7 @@ Output Format (Markdown):
 Constraints: Be concise but complete; preserve logic and contingencies; use professional clinical language.`;
 };
 
-/* -------------------- LLM wrapper -------------------- */
+/* ====================== LLM wrapper ====================== */
 const isResponsesModel = (m) => /^gpt-5|^o3/i.test(m || '');
 function extractText(resp){
   return resp?.output_text
@@ -175,7 +175,7 @@ async function runLLMRetry(fn, { tries = 3, baseDelay = 600 } = {}) {
   throw lastErr;
 }
 
-/* -------------------- Atomic step endpoints -------------------- */
+/* ====================== Atomic step endpoints ====================== */
 app.post('/plan', async (req, res) => {
   try{
     const { caseText, model, reasoningEffort, verbosity } = req.body || {};
@@ -221,7 +221,7 @@ app.post('/synthesize', async (req, res) => {
   }catch(e){ console.error(e); res.status(500).json({ error: 'synth_failed' }); }
 });
 
-/* -------------------- Orchestrated flow (+ Manager Override) -------------------- */
+/* ====================== Orchestrated /generate ====================== */
 app.post('/generate', async (req, res) => {
   try{
     const { caseText, model, reasoningEffort, verbosity } = req.body || {};
@@ -238,6 +238,9 @@ app.post('/generate', async (req, res) => {
 
     // 1..3) Review + up to 2 revisions
     let verdict = 'reject', comment = '';
+    let source = 'review';           // 'review' | 'manager_override'
+    let manager_note = '';
+
     for (let round = 0; round < 3; round++) {
       const reviewText = await runLLMRetry(() => runLLM({
         system: 'Return only a verify tag and a feedback tag for the safety review.',
@@ -270,30 +273,39 @@ app.post('/generate', async (req, res) => {
       }, { model, reasoningEffort }));
 
       const over = (mgrText.match(/<Manager_Override>(.*?)<\/Manager_Override>/i) || [,'reject'])[1].trim();
-      const note = (mgrText.match(/<Manager_Note>([\s\S]*?)<\/Manager_Note>/i) || [,''])[1].trim();
+      manager_note = (mgrText.match(/<Manager_Note>([\s\S]*?)<\/Manager_Note>/i) || [,''])[1].trim();
 
       if (/accept/i.test(over)) {
         verdict = 'accept';
-        comment = (comment ? comment + ' ' : '') + `(Manager override: ${note})`;
-      } else {
-        return res.json({ verdict, comment, xml: planXml, manager_note: note });
+        source = 'manager_override';
       }
     }
 
-    // 5) Synthesize final note
-    const markdown = await runLLMRetry(() => runLLM({
-      system: 'You write clean, professional operative plans in Markdown.',
-      user: synthPrompt(planXml, verbosity)
-    }, { model, reasoningEffort }));
+    // Compose reason string for the UI
+    const reason =
+      source === 'manager_override'
+        ? (comment ? `${comment}\n\nManager override: ${manager_note}` : `Manager override: ${manager_note}`)
+        : (comment || '');
 
-    return res.json({ verdict, comment, xml: planXml, markdown });
+    // 5) If accepted → synthesize; else return rejection + reason
+    if (verdict === 'accept') {
+      const markdown = await runLLMRetry(() => runLLM({
+        system: 'You write clean, professional operative plans in Markdown.',
+        user: synthPrompt(planXml, verbosity)
+      }, { model, reasoningEffort }));
+
+      return res.json({ verdict, source, reason, comment, manager_note, xml: planXml, markdown });
+    }
+
+    return res.json({ verdict, source, reason, comment, manager_note, xml: planXml });
+
   }catch(e){
     console.error(e);
     res.status(500).json({ error: 'generate_failed' });
   }
 });
 
-/* -------------------- Health root -------------------- */
+/* ====================== Health root ====================== */
 app.get('/', (_req, res)=> res.json({ ok:true, service:'PRS Co-Pilot API (Responses/Chat Hybrid + Manager Override)' }));
 
 const port = process.env.PORT || 8787;
