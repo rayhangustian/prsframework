@@ -13,21 +13,41 @@ The pipeline mirrors a surgical team:
 3. **Manager override** distinguishes safety-critical rejections from minor formatting issues, so the loop is strict on substance but not on style.
 4. **Synthesizer (chief resident)** converts the approved plan into a formal operative note.
 
-## Live demo
+## Live generation with an offline fallback
 
-The deployed demo runs fully offline on a library of synthetic, de-identified head and neck cases, so it requires no API key and cannot fail mid-demonstration. Open the site, load an example case, and generate a plan to walk through the full loop.
+"Generate Surgical Plan" runs the full pipeline live on the case in the box. If
+live generation is unavailable for any reason (no key configured, rate limit,
+network error), it falls back automatically to a bundled result so the demo
+never breaks. "Run offline demo" always plays a bundled synthetic case with no
+network call at all.
 
-The live generation path (`/generate`, `/plan`, `/review`, `/synthesize`), which drafts plans for new cases in real time, uses the OpenAI API and requires an `OPENAI_API_KEY` at runtime. It is optional and not needed for the demo.
+The bundled library is a set of synthetic, de-identified head and neck cases, so
+the offline path requires no API key and cannot fail mid-demonstration.
+
+## Deploying (Vercel)
+
+The app deploys on Vercel with no credit card required:
+
+1. Import this repository at vercel.com.
+2. To enable live generation, add these environment variables in the project settings:
+   - `OPENAI_API_KEY` — your OpenAI API key (required for live generation).
+   - `MODEL_DEFAULT` — optional, defaults to `gpt-4o`.
+   - `DEMO_PASSCODE` — optional. If set, live generation requires this code, which
+     protects the key from public abuse. The offline demo stays open.
+3. Deploy. Without `OPENAI_API_KEY` the site still works as the offline demo.
+
+Static files are served from `public/`; live generation runs as the serverless
+function in `api/generate.js`. Both share the pipeline logic in `lib/orchestrator.js`.
 
 ## Running locally
 
 ```bash
 npm install
-npm start
-# opens on http://localhost:8787
+node scripts/build-cases.mjs   # generates public/cases.json for the browser
+npm start                      # http://localhost:8787
 ```
 
-To enable live generation, add a `.env` file with `OPENAI_API_KEY=your-key`.
+To enable live generation locally, add a `.env` file with `OPENAI_API_KEY=your-key`.
 
 ## Status and scope
 

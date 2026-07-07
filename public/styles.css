@@ -291,6 +291,30 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; }
   background: var(--gold); border-radius: 2px;
 }
 
+/* Verdict badge — needs-revision state (live plans that were not accepted) */
+.verdict-flagged {
+  background: var(--flag-tint); color: var(--flag);
+  border: 1px solid var(--flag-line);
+}
+
+/* Live-generation row: optional access code + status note */
+.live-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px;
+}
+.passcode {
+  flex: 0 1 240px; min-width: 160px;
+  padding: 9px 12px; font-size: 13.5px; font-family: var(--font);
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.passcode:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+.live-note {
+  margin: 0; flex: 1 1 220px; font-size: 13px; line-height: 1.5; color: var(--ink-faint);
+}
+.live-note.note-live { color: var(--teal-deep); }
+.live-note.note-offline { color: var(--flag); }
+
 @media (max-width: 620px) {
   .topbar-inner { flex-direction: column; align-items: flex-start; gap: 12px; }
   .brand-text { text-align: left; }

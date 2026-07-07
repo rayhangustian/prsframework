@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-cases.mjs",
+  "outputDirectory": "public",
+  "functions": {
+    "api/generate.js": { "maxDuration": 60 }
+  }
+}

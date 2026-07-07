@@ -13,6 +13,9 @@
   var els = {
     randomBtn: document.getElementById('random-case'),
     generateBtn: document.getElementById('generate'),
+    offlineBtn: document.getElementById('offline-demo'),
+    passcode: document.getElementById('passcode'),
+    liveNote: document.getElementById('live-note'),
     caseText: document.getElementById('case-text'),
     caseHint: document.getElementById('case-hint'),
     thesisTitle: document.getElementById('thesis-title'),
@@ -95,7 +98,47 @@
     return html;
   }
 
-  // ---- Results rendering (unchanged from Phase 1) ----
+  // Parse a <SurgicalPlan> XML string (from live generation) into the same
+  // plan-array shape the renderer uses for bundled cases. Best-effort; on any
+  // trouble it returns whatever it managed, and the caller falls back if empty.
+  function xmlToPlan(xml) {
+    var out = [];
+    if (!xml) return out;
+    var s = String(xml);
+    var re = /<if_block\b[^>]*condition=(?:'([^']*)'|"([^"]*)")[^>]*>([\s\S]*?)<\/if_block>|<step\b[^>]*>([\s\S]*?)<\/step>/gi;
+    function parseSteps(block) {
+      var steps = [];
+      var sre = /<step\b[^>]*>([\s\S]*?)<\/step>/gi, sm;
+      while ((sm = sre.exec(block))) {
+        steps.push({
+          name: field(sm[1], 'action_name'),
+          description: field(sm[1], 'description')
+        });
+      }
+      return steps;
+    }
+    function field(chunk, tag) {
+      var m = new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i').exec(chunk || '');
+      return m ? m[1].replace(/\s+/g, ' ').replace(/_/g, ' ').trim() : '';
+    }
+    var m;
+    while ((m = re.exec(s))) {
+      if (m[3] !== undefined && (m[1] !== undefined || m[2] !== undefined)) {
+        out.push({ type: 'branch', condition: (m[1] || m[2] || '').trim(), steps: parseSteps(m[3]) });
+      } else if (m[4] !== undefined) {
+        out.push({ type: 'step', name: field(m[4], 'action_name'), description: field(m[4], 'description') });
+      }
+    }
+    return out;
+  }
+
+  function setNote(text, kind) {
+    if (!els.liveNote) return;
+    els.liveNote.textContent = text || '';
+    els.liveNote.className = 'live-note' + (kind ? ' note-' + kind : '');
+  }
+
+  // ---- Results rendering ----
   function loadCase(data) {
     els.caseText.value = data.caseText || '';
     els.caseHint.textContent = 'Example case loaded. Review, then generate a surgical plan.';
@@ -130,9 +173,11 @@
   }
 
   function renderResults(data) {
-    renderPlan(data.plan);
-    els.verdictBadge.textContent = 'APPROVED ✓';
-    els.verdictBadge.className = 'verdict-badge verdict-approved';
+    var plan = (Array.isArray(data.plan) && data.plan.length) ? data.plan : xmlToPlan(data.xml);
+    renderPlan(plan);
+    var accepted = !data.verdict || /accept/i.test(data.verdict);
+    els.verdictBadge.textContent = accepted ? 'APPROVED ✓' : 'NEEDS REVISION';
+    els.verdictBadge.className = 'verdict-badge ' + (accepted ? 'verdict-approved' : 'verdict-flagged');
     els.reviewComment.textContent = data.comment || data.reason || '';
     els.opnote.innerHTML = renderMarkdown(data.markdown || '');
     els.results.hidden = false;
@@ -292,71 +337,145 @@
 
   // ---- State ----
   var currentCase = null;   // full case object currently loaded in the intake area
-  var caseIds = [];         // known library ids, used to avoid immediate repeats
+  var CASE_LIBRARY = [];    // bundled synthetic cases, loaded once from cases.json
+
+  // Load the bundled case library once from a static file. No server needed,
+  // so this works on any static host and powers the offline fallback.
+  var libraryReady = (async function () {
+    try {
+      var res = await fetch('cases.json', { cache: 'force-cache' });
+      if (res.ok) {
+        var data = await res.json();
+        var lib = Array.isArray(data) ? data : (data && data.cases) || [];
+        CASE_LIBRARY = lib.filter(function (c) { return c && Array.isArray(c.plan) && c.markdown; });
+      }
+    } catch (e) { /* fall back to the built-in FALLBACK case */ }
+  })();
 
   // ---- Handlers ----
-  // Fetch a case by id (or random when id is null). Validates shape; never throws.
+  // Return a bundled case by id, a random one (different from current), or the
+  // built-in FALLBACK. Never throws.
   async function fetchCase(id) {
     try {
-      var res = await fetch('/api/demo-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(id ? { id: id } : {})
-      });
-      if (res.ok) {
-        var payload = await res.json();
-        if (payload && Array.isArray(payload.plan) && payload.markdown) return payload;
+      await libraryReady;
+      if (CASE_LIBRARY.length) {
+        var picked = null;
+        if (id) picked = CASE_LIBRARY.filter(function (c) { return c.id === id; })[0] || null;
+        if (!picked) {
+          var currId = currentCase && currentCase.id;
+          var pool = CASE_LIBRARY.filter(function (c) { return c.id !== currId; });
+          if (!pool.length) pool = CASE_LIBRARY;
+          picked = pool[Math.floor(Math.random() * pool.length)];
+        }
+        if (picked) return picked;
       }
     } catch (e) { /* fall through */ }
     return FALLBACK; // never-fail
   }
 
-  // Load the lightweight case-id list once (best effort; never blocks the demo).
-  async function loadCaseIds() {
-    try {
-      var res = await fetch('/api/cases');
-      if (res.ok) {
-        var list = await res.json();
-        if (Array.isArray(list) && list.length) caseIds = list.map(function (c) { return c.id; });
-      }
-    } catch (e) { /* ignore; random fetch still works */ }
-  }
-
-  // Pick a random id different from the currently loaded one, when possible.
-  function pickDifferentId() {
-    if (!caseIds.length) return null; // server will pick random
-    var currId = currentCase && currentCase.id;
-    var choices = caseIds.filter(function (x) { return x !== currId; });
-    var pool = choices.length ? choices : caseIds;
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-
   async function onRandomCase() {
-    var data = await fetchCase(pickDifferentId());
+    var data = await fetchCase(null);
     currentCase = data;
     loadCase(data);
+    setNote('');
   }
 
-  async function onGenerate() {
-    els.generateBtn.disabled = true;
-    els.results.hidden = true;
+  // Generic stepper narrative for a live run (the live API returns no process).
+  function liveProcess() {
+    return {
+      draftSteps: ['Reading the patient case…', 'Drafting a structured, conditional plan…', 'Formatting steps and contingencies…'],
+      reviewChecks: ['Oncologic soundness', 'Reconstructive soundness', 'Contingency planning', 'Clarity & logic'],
+      round1: { verdict: 'flagged', concern: 'The review board is checking the draft against safety and completeness standards.' },
+      round2: { fix: 'The plan is revised to address the board’s concerns before final synthesis.', verdict: 'accept' }
+    };
+  }
 
-    // Run the SAME case that is loaded so the stepper narrative matches it.
-    var data = currentCase || await fetchCase(null);
-    currentCase = data;
-
+  // Call the live generation endpoint. Never throws; returns {ok, data|reason}.
+  async function tryLiveGenerate(caseText) {
     try {
-      await runStepper(data.process);
-    } catch (e) { /* animation must never block results */ }
-
-    try {
-      renderResults(data);
-      try { els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e2) {}
+      var res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseText: caseText, passcode: (els.passcode && els.passcode.value) || '' })
+      });
+      if (res.ok) {
+        var data = await res.json();
+        if (data && (data.xml || (Array.isArray(data.plan) && data.plan.length))) return { ok: true, data: data };
+        return { ok: false, reason: 'empty' };
+      }
+      var err = {};
+      try { err = await res.json(); } catch (e) {}
+      return { ok: false, reason: (err && err.error) || ('http_' + res.status) };
     } catch (e) {
-      try { renderResults(FALLBACK); } catch (e3) {}
+      return { ok: false, reason: 'network' };
+    }
+  }
+
+  function renderOfflineFallback(reason) {
+    var data = (currentCase && Array.isArray(currentCase.plan) && currentCase.plan.length) ? currentCase : FALLBACK;
+    try { renderResults(data); } catch (e) { try { renderResults(FALLBACK); } catch (e2) {} }
+    var msg = 'Live generation was unavailable, so this shows a bundled example result.';
+    if (reason === 'bad_passcode') msg = 'A valid access code is required for live generation. Showing a bundled example instead.';
+    else if (reason === 'rate_limited') msg = 'Live rate limit reached. Showing a bundled example result.';
+    else if (reason === 'live_unavailable') msg = 'Live generation is not configured on this deployment. Showing a bundled example result.';
+    else if (reason === 'case_too_long') msg = 'That case text is too long for live generation. Showing a bundled example result.';
+    setNote(msg, 'offline');
+  }
+
+  // Primary action: try live generation on the current case text; if anything
+  // goes wrong, fall back to a bundled result so the demo never fails.
+  async function onGenerate() {
+    var caseText = (els.caseText.value || '').trim();
+    if (!caseText) { await onOfflineDemo(); return; }
+
+    els.generateBtn.disabled = true;
+    els.offlineBtn.disabled = true;
+    els.results.hidden = true;
+    setNote('Contacting the live model…', 'live');
+
+    var livePromise = tryLiveGenerate(caseText);
+
+    // Play the paced multi-agent animation while the live call runs.
+    try { await runStepper(liveProcess()); } catch (e) {}
+
+    var live = await livePromise;
+
+    if (live && live.ok) {
+      try {
+        var d = live.data;
+        d.plan = (Array.isArray(d.plan) && d.plan.length) ? d.plan : xmlToPlan(d.xml);
+        renderResults(d);
+        setNote('Generated live by the model.', 'live');
+      } catch (e) {
+        renderOfflineFallback('render');
+      }
+    } else {
+      renderOfflineFallback(live && live.reason);
     }
 
+    try { els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
     els.generateBtn.disabled = false;
+    els.offlineBtn.disabled = false;
+  }
+
+  // Explicit offline demo: always renders a bundled synthetic case, never calls
+  // the network. Guaranteed to work anywhere.
+  async function onOfflineDemo() {
+    els.generateBtn.disabled = true;
+    els.offlineBtn.disabled = true;
+    els.results.hidden = true;
+
+    var data = (currentCase && Array.isArray(currentCase.plan) && currentCase.plan.length) ? currentCase : await fetchCase(null);
+    currentCase = data;
+    loadCase(data);
+    setNote('Offline demo — bundled synthetic case.', 'offline');
+
+    try { await runStepper(data.process); } catch (e) {}
+    try { renderResults(data); } catch (e) { try { renderResults(FALLBACK); } catch (e2) {} }
+    try { els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+
+    els.generateBtn.disabled = false;
+    els.offlineBtn.disabled = false;
   }
 
   // Guard against any uncaught rejection/error surfacing to the user.
@@ -366,5 +485,10 @@
   els.thesisTitle.textContent = THESIS_TITLE;
   els.randomBtn.addEventListener('click', onRandomCase);
   els.generateBtn.addEventListener('click', onGenerate);
-  loadCaseIds(); // best-effort; enables repeat-avoidance on "Load Example Case"
+  els.offlineBtn.addEventListener('click', onOfflineDemo);
+  // Enable "Generate" as soon as there is case text (typed or loaded).
+  els.caseText.addEventListener('input', function () {
+    els.generateBtn.disabled = !els.caseText.value.trim();
+  });
+  libraryReady; // kick off the bundled-case load (best effort)
 })();
