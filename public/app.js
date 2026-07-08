@@ -21,6 +21,7 @@
     thesisTitle: document.getElementById('thesis-title'),
     stepperCard: document.getElementById('stepper-card'),
     stepperTitle: document.getElementById('stepper-title'),
+    liveBadge: document.getElementById('live-badge'),
     workingPulse: document.getElementById('working-pulse'),
     stepper: document.getElementById('stepper'),
     results: document.getElementById('results'),
@@ -245,7 +246,7 @@
     var d = document.createElement('div');
     d.className = cls;
     var lab = document.createElement('span');
-    lab.className = cls === 'fix-text' ? 'fix-label' : 'concern-label';
+    lab.className = cls === 'fix-text' ? 'fix-label' : (cls === 'manager-text' ? 'manager-label' : 'concern-label');
     lab.textContent = labelText;
     var body = document.createElement('span');
     body.textContent = bodyText;
@@ -259,9 +260,12 @@
   }
 
   // ---- The paced multi-agent stepper (~10-15s) ----
-  async function runStepper(p) {
+  // `opts.completionTitle` lets callers (e.g. the offline replay) relabel the
+  // final headline honestly without duplicating this whole animation.
+  async function runStepper(p, opts) {
     els.stepperCard.hidden = false;
     els.stepper.innerHTML = '';
+    if (els.liveBadge) els.liveBadge.hidden = true; // this is a scripted/replayed animation, not a real trace
     els.workingPulse.classList.remove('is-idle');
     scrollStepper();
 
@@ -331,7 +335,7 @@
     await sleep(1000);
     setStageState(s4, 'done');
 
-    els.stepperTitle.textContent = 'Review complete — plan approved';
+    els.stepperTitle.textContent = (opts && opts.completionTitle) || 'Review complete — plan approved';
     els.workingPulse.classList.add('is-idle');
   }
 
@@ -411,33 +415,269 @@
     }
   }
 
-  function renderOfflineFallback(reason) {
-    var data = (currentCase && Array.isArray(currentCase.plan) && currentCase.plan.length) ? currentCase : FALLBACK;
-    try { renderResults(data); } catch (e) { try { renderResults(FALLBACK); } catch (e2) {} }
-    var msg = 'Live generation was unavailable, so this shows a bundled example result.';
-    if (reason === 'bad_passcode') msg = 'A valid access code is required for live generation. Showing a bundled example instead.';
-    else if (reason === 'rate_limited') msg = 'Live rate limit reached. Showing a bundled example result.';
-    else if (reason === 'live_unavailable') msg = 'Live generation is not configured on this deployment. Showing a bundled example result.';
-    else if (reason === 'case_too_long') msg = 'That case text is too long for live generation. Showing a bundled example result.';
-    setNote(msg, 'offline');
+  // ---- Real-event live stepper (honest trace of the actual pipeline run) ----
+  // Neutral, checklist-style working sublines shown while waiting for the next
+  // real event within a stage. These never assert a verdict or fabricate a
+  // finding; they only describe what the stage is generically doing.
+  var NEUTRAL_LINES = {
+    planner: ['Reading the patient case…', 'Structuring the plan and contingencies…'],
+    review: ['Reviewing oncologic soundness…', 'Reviewing reconstructive soundness…', 'Checking contingency planning…', 'Checking clarity and logic…'],
+    revision: ['Operating surgeon addressing the board’s concerns…'],
+    manager: ['Weighing whether the concern is safety-critical or a formatting note…'],
+    synth: ['Composing the formal operative note…']
+  };
+  var MIN_DWELL_MS = 650;
+  var MAX_DWELL_MS = 900;
+  function dwellMs() { return MIN_DWELL_MS + Math.random() * (MAX_DWELL_MS - MIN_DWELL_MS); }
+
+  // A tiny async queue: the network reader pushes real pipeline events onto it
+  // as they arrive (which may be all at once, if a host buffers the stream);
+  // the stepper drains it on its own paced schedule so the animation always
+  // plays naturally regardless of arrival timing.
+  function createEventQueue() {
+    var items = [];
+    var waiter = null;
+    var closed = false;
+    return {
+      push: function (ev) {
+        items.push(ev);
+        if (waiter) { var w = waiter; waiter = null; w(); }
+      },
+      close: function () {
+        closed = true;
+        if (waiter) { var w = waiter; waiter = null; w(); }
+      },
+      next: async function () {
+        while (!items.length && !closed) {
+          await new Promise(function (resolve) { waiter = resolve; });
+        }
+        return items.length ? items.shift() : null; // null = closed and drained
+      }
+    };
   }
 
-  // Primary action: try live generation on the current case text; if anything
-  // goes wrong, fall back to a bundled result so the demo never fails.
-  async function onGenerate() {
-    var caseText = (els.caseText.value || '').trim();
-    if (!caseText) { await onOfflineDemo(); return; }
+  // Reads the NDJSON stream from /api/generate-stream, pushing each real
+  // pipeline event onto `queue` as it is parsed. Tolerates partial lines
+  // across chunk boundaries. Returns {ok:true, data:result} on a clean
+  // 'final' line, or {ok:false, reason} on any guard failure, mid-stream
+  // 'error' line, missing 'final' line, or network/parse trouble. Always
+  // closes the queue before returning (even on throw), so the stepper loop
+  // never hangs waiting for more events.
+  async function streamLiveGenerate(caseText, queue) {
+    try {
+      var res;
+      try {
+        res = await fetch('/api/generate-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caseText: caseText, passcode: (els.passcode && els.passcode.value) || '' })
+        });
+      } catch (e) {
+        return { ok: false, reason: 'network' };
+      }
 
-    els.generateBtn.disabled = true;
-    els.offlineBtn.disabled = true;
-    els.results.hidden = true;
-    setNote('Contacting the live model…', 'live');
+      if (!res.ok) {
+        var err = {};
+        try { err = await res.json(); } catch (e) {}
+        return { ok: false, reason: (err && err.error) || ('http_' + res.status) };
+      }
 
+      if (!res.body || typeof res.body.getReader !== 'function') {
+        return { ok: false, reason: 'no_stream' };
+      }
+
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      var finalResult = null;
+      var streamError = false;
+
+      function handleLine(line) {
+        line = (line || '').trim();
+        if (!line) return;
+        var obj;
+        try { obj = JSON.parse(line); } catch (e) { return; } // tolerate a stray partial/bad line
+        if (!obj || typeof obj !== 'object') return;
+        if (obj.type === 'final') finalResult = obj.result || null;
+        else if (obj.type === 'error') streamError = true;
+        else queue.push(obj);
+      }
+
+      try {
+        while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var parts = buffer.split('\n');
+          buffer = parts.pop();
+          for (var i = 0; i < parts.length; i++) handleLine(parts[i]);
+        }
+        if (buffer) handleLine(buffer);
+      } catch (e) {
+        return { ok: false, reason: 'network' };
+      }
+
+      if (streamError) return { ok: false, reason: 'generate_failed' };
+      if (!finalResult) return { ok: false, reason: 'stream_incomplete' };
+      return { ok: true, data: finalResult };
+    } finally {
+      queue.close();
+    }
+  }
+
+  // Drains the queue and renders one stepper stage/subline per real pipeline
+  // event, honestly. Never fabricates a flag: a round-1 accept is shown as
+  // exactly that. Applies a minimum per-event dwell for pacing, and shows
+  // neutral working sublines while waiting on a stage for the next event.
+  async function runLiveStepper(queue) {
+    els.stepperCard.hidden = false;
+    els.stepper.innerHTML = '';
+    if (els.liveBadge) els.liveBadge.hidden = false;
+    els.workingPulse.classList.remove('is-idle');
+    els.stepperTitle.textContent = 'Operating surgeon — reading the case';
+    scrollStepper();
+
+    var reviewStages = {};
+    var revisionStages = {};
+    var managerStage = null;
+    var neutralTimer = null;
+
+    function stopNeutral() {
+      if (neutralTimer) { clearInterval(neutralTimer); neutralTimer = null; }
+    }
+    function startNeutral(stage, lines) {
+      stopNeutral();
+      if (!stage || !lines || !lines.length) return;
+      var idx = 0;
+      neutralTimer = setInterval(function () {
+        if (idx >= lines.length) { stopNeutral(); return; } // show each line once; never repeat
+        addSubline(stage, lines[idx], 'work');
+        idx++;
+        scrollStepper();
+      }, 900);
+    }
+
+    try {
+      while (true) {
+        var ev = await queue.next();
+        if (ev === null) break; // stream closed, nothing more to show
+
+        var startedAt = Date.now();
+
+        switch (ev.type) {
+          case 'planner_start': {
+            els.stepperTitle.textContent = 'Operating surgeon — drafting the plan';
+            var s1 = createStage('Operating Surgeon', null);
+            setStageState(s1, 'active');
+            reviewStages.__planner = s1;
+            startNeutral(s1, NEUTRAL_LINES.planner);
+            break;
+          }
+          case 'planner_done': {
+            stopNeutral();
+            if (reviewStages.__planner) setStageState(reviewStages.__planner, 'done');
+            break;
+          }
+          case 'review_start': {
+            stopNeutral();
+            els.stepperTitle.textContent = 'Surgical Review Board — reviewing (Round ' + ev.round + ')';
+            var rs = createStage('Surgical Review Board', 'Round ' + ev.round);
+            setStageState(rs, 'active');
+            reviewStages[ev.round] = rs;
+            startNeutral(rs, NEUTRAL_LINES.review);
+            break;
+          }
+          case 'review_done': {
+            stopNeutral();
+            var rstage = reviewStages[ev.round];
+            if (rstage) {
+              var accepted = /accept/i.test(ev.verdict || '');
+              if (accepted) {
+                addVerdict(rstage, 'approved', ev.round === 1 ? 'Approved on first review' : 'Approved ✓');
+                setStageState(rstage, 'done');
+              } else {
+                addVerdict(rstage, 'flagged', 'Flagged — concern raised');
+                addBlock(rstage, 'concern-text', 'Board concern', ev.comment || 'A concern was raised.');
+                setStageState(rstage, 'flagged');
+              }
+            }
+            break;
+          }
+          case 'revision_start': {
+            els.stepperTitle.textContent = 'Revision — Round ' + ev.round + ' (addressing the board)';
+            var rvs = createStage('Revision', 'Round ' + ev.round);
+            setStageState(rvs, 'active');
+            revisionStages[ev.round] = rvs;
+            startNeutral(rvs, NEUTRAL_LINES.revision);
+            break;
+          }
+          case 'revision_done': {
+            stopNeutral();
+            var rvstage = revisionStages[ev.round];
+            if (rvstage) setStageState(rvstage, 'done');
+            break;
+          }
+          case 'manager_start': {
+            els.stepperTitle.textContent = 'Manager — reviewing the board’s rejection';
+            managerStage = createStage('Manager', null);
+            setStageState(managerStage, 'active');
+            startNeutral(managerStage, NEUTRAL_LINES.manager);
+            break;
+          }
+          case 'manager_done': {
+            stopNeutral();
+            if (managerStage) {
+              var overrideAccepted = !!ev.override;
+              if (overrideAccepted) {
+                addVerdict(managerStage, 'approved', 'Manager override: accepted');
+                addBlock(managerStage, 'manager-text', 'Manager note', ev.note || 'Treated as a minor, non-safety concern.');
+                setStageState(managerStage, 'done');
+              } else {
+                addVerdict(managerStage, 'flagged', 'Manager: rejection upheld');
+                addBlock(managerStage, 'manager-text', 'Manager note', ev.note || 'The concern is safety-critical and stands.');
+                setStageState(managerStage, 'flagged');
+                els.stepperTitle.textContent = 'Review complete — plan requires revision';
+                els.workingPulse.classList.add('is-idle');
+              }
+            }
+            break;
+          }
+          case 'synth_start': {
+            els.stepperTitle.textContent = 'Chief resident — writing the operative note';
+            var s4 = createStage('Chief Resident', null);
+            setStageState(s4, 'active');
+            reviewStages.__synth = s4;
+            startNeutral(s4, NEUTRAL_LINES.synth);
+            break;
+          }
+          case 'synth_done': {
+            stopNeutral();
+            if (reviewStages.__synth) setStageState(reviewStages.__synth, 'done');
+            els.stepperTitle.textContent = 'Review complete — plan approved';
+            els.workingPulse.classList.add('is-idle');
+            break;
+          }
+          default:
+            break;
+        }
+
+        scrollStepper();
+        var elapsed = Date.now() - startedAt;
+        var remain = dwellMs() - elapsed;
+        if (remain > 0) await sleep(remain);
+      }
+    } finally {
+      stopNeutral();
+    }
+  }
+
+  // Fallback path when the real-event stream is unavailable or fails for any
+  // reason: replays the existing scripted animation while the buffered
+  // /api/generate call runs, exactly as before this feature existed. If that
+  // also fails, it falls back further to the bundled offline result.
+  async function runBufferedFallback(caseText) {
     var livePromise = tryLiveGenerate(caseText);
-
-    // Play the paced multi-agent animation while the live call runs.
     try { await runStepper(liveProcess()); } catch (e) {}
-
     var live = await livePromise;
 
     if (live && live.ok) {
@@ -451,6 +691,61 @@
       }
     } else {
       renderOfflineFallback(live && live.reason);
+    }
+  }
+
+  function renderOfflineFallback(reason) {
+    var data = (currentCase && Array.isArray(currentCase.plan) && currentCase.plan.length) ? currentCase : FALLBACK;
+    try { renderResults(data); } catch (e) { try { renderResults(FALLBACK); } catch (e2) {} }
+    var msg = 'Live generation was unavailable, so this shows a bundled example result.';
+    if (reason === 'bad_passcode') msg = 'A valid access code is required for live generation. Showing a bundled example instead.';
+    else if (reason === 'rate_limited') msg = 'Live rate limit reached. Showing a bundled example result.';
+    else if (reason === 'live_unavailable') msg = 'Live generation is not configured on this deployment. Showing a bundled example result.';
+    else if (reason === 'case_too_long') msg = 'That case text is too long for live generation. Showing a bundled example result.';
+    setNote(msg, 'offline');
+  }
+
+  // Primary action: try the real-event live stream first, so the stepper
+  // shows what the pipeline actually did. If the stream is unavailable or
+  // fails for any reason, fall back to the buffered live path with the
+  // scripted animation, and from there to a bundled result, so the demo never
+  // fails and never shows a broken state.
+  async function onGenerate() {
+    var caseText = (els.caseText.value || '').trim();
+    if (!caseText) { await onOfflineDemo(); return; }
+
+    els.generateBtn.disabled = true;
+    els.offlineBtn.disabled = true;
+    els.results.hidden = true;
+    setNote('Contacting the live model…', 'live');
+
+    var usedRealStream = false;
+    var streamSupported = typeof window.fetch === 'function' && typeof window.ReadableStream === 'function';
+
+    if (streamSupported) {
+      var queue = createEventQueue();
+      var streamPromise = streamLiveGenerate(caseText, queue);
+      var stepperPromise = runLiveStepper(queue);
+      var stream = await streamPromise;
+      try { await stepperPromise; } catch (e) {}
+
+      if (stream && stream.ok) {
+        try {
+          var d = stream.data;
+          d.plan = (Array.isArray(d.plan) && d.plan.length) ? d.plan : xmlToPlan(d.xml);
+          renderResults(d);
+          setNote('Generated live. The review trace above is the actual pipeline output.', 'live');
+        } catch (e) {
+          // Rendering the live result failed; do not rerun the whole pipeline,
+          // fall straight back to a bundled result instead.
+          renderOfflineFallback('render');
+        }
+        usedRealStream = true;
+      }
+    }
+
+    if (!usedRealStream) {
+      await runBufferedFallback(caseText);
     }
 
     try { els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
@@ -468,9 +763,9 @@
     var data = (currentCase && Array.isArray(currentCase.plan) && currentCase.plan.length) ? currentCase : await fetchCase(null);
     currentCase = data;
     loadCase(data);
-    setNote('Offline demo — bundled synthetic case.', 'offline');
+    setNote('Offline demo: a pre-prepared review sequence on a bundled synthetic case.', 'offline');
 
-    try { await runStepper(data.process); } catch (e) {}
+    try { await runStepper(data.process, { completionTitle: 'Walkthrough complete — bundled synthetic case' }); } catch (e) {}
     try { renderResults(data); } catch (e) { try { renderResults(FALLBACK); } catch (e2) {} }
     try { els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
 

@@ -88,6 +88,52 @@ async function handleGenerate(req, res) {
 app.post('/generate', handleGenerate);
 app.post('/api/generate', handleGenerate);
 
+/* ---------------- Orchestrated /generate-stream (NDJSON events) ---------------- */
+// Same pipeline as /generate, but streams each real pipeline event as it
+// happens, then a final { type: 'final', result } line with the same result
+// shape /generate returns. On a mid-pipeline error it writes a final
+// { type: 'error', error: 'generate_failed' } line and ends. Guard failures
+// (missing caseText, no key) respond as plain JSON, matching /generate.
+async function handleGenerateStream(req, res) {
+  try {
+    const { caseText, model, reasoningEffort, verbosity } = req.body || {};
+    if (!caseText || !caseText.trim()) return res.status(400).json({ error: 'Missing caseText' });
+    if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error: 'live_unavailable' });
+
+    res.status(200);
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Cache-Control', 'no-cache');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    const writeLine = (obj) => {
+      try {
+        res.write(JSON.stringify(obj) + '\n');
+        if (typeof res.flush === 'function') res.flush();
+      } catch {
+        // Best-effort; if the connection dropped there is nothing more to do.
+      }
+    };
+
+    try {
+      const result = await generatePlan({
+        client, caseText, model, reasoningEffort, verbosity, modelDefault: MODEL_DEFAULT,
+        onEvent: writeLine,
+      });
+      writeLine({ type: 'final', result });
+      res.end();
+    } catch (e) {
+      console.error(e);
+      writeLine({ type: 'error', error: 'generate_failed' });
+      res.end();
+    }
+  } catch (e) {
+    console.error(e);
+    try { res.status(500).json({ error: 'generate_failed' }); } catch {}
+  }
+}
+app.post('/generate-stream', handleGenerateStream);
+app.post('/api/generate-stream', handleGenerateStream);
+
 /* ---------------- Bundled offline demo (synthetic case library) ---------------- */
 app.get('/api/cases', (_req, res) => {
   res.json((cases || [demoCase]).map((c) => ({ id: c.id, title: c.title })));
