@@ -36,11 +36,10 @@ app.post('/plan', async (req, res) => {
     const { caseText, verbosity } = req.body || {};
     if (!caseText || !caseText.trim()) return res.status(400).json({ error: 'Missing caseText' });
     const content = await runLLM({
-      system: 'Return ONLY the <SurgicalPlan>…</SurgicalPlan>.',
+      system: 'Return only the surgical plan as Markdown, following the Output_Contract sections exactly. No preamble.',
       user: plannerPrompt(caseText, verbosity)
     }, llmOpts(req.body));
-    const m = content.match(/<SurgicalPlan[\s\S]*?<\/SurgicalPlan>/i);
-    res.json({ xml: m ? m[0] : content });
+    res.json({ plan_markdown: content });
   } catch (e) { console.error(e); res.status(500).json({ error: 'planner_failed' }); }
 });
 

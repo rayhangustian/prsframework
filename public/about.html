@@ -74,11 +74,11 @@
             </div>
             <div class="pipe-body">
               <span class="pipe-kicker">Prompt 1</span>
-              <span class="pipe-name">Planner <span class="pipe-sub">expert surgeon</span></span>
-              <p class="pipe-desc">Drafts a structured, conditional surgical plan from the case, with explicit branches for intraoperative findings rather than a single flat sequence.</p>
+              <span class="pipe-name">Planner <span class="pipe-sub">operating surgeon</span></span>
+              <p class="pipe-desc">Drafts a case-specific plan under the protocol's strict rules: use only stated case facts, justify the primary strategy against alternatives, and declare unknowns instead of guessing.</p>
               <div class="pipe-quote">
                 <span class="pipe-quote-label">From the actual prompt</span>
-                You are an expert head and neck reconstructive microsurgeon with 20 years at a leading academic cancer center.
+                If important information is missing, do not guess. State it under &quot;Unknowns / Clarifications Needed&quot; and explain why it matters.
               </div>
             </div>
           </div>
@@ -121,10 +121,10 @@
             <div class="pipe-body">
               <span class="pipe-kicker">Prompt 3</span>
               <span class="pipe-name">Synthesizer <span class="pipe-sub">chief resident</span></span>
-              <p class="pipe-desc">Converts the approved plan into a formal operative note: preoperative plan, ablation, reconstruction, and key contingencies.</p>
+              <p class="pipe-desc">Converts the accepted plan into a concise preoperative planning note. Formatting only: it may not add new clinical content, and it must preserve any declared uncertainty.</p>
               <div class="pipe-quote">
                 <span class="pipe-quote-label">From the actual prompt</span>
-                Role: Chief Surgical Resident. Convert the approved structured plan into a formal &quot;Surgical Operative Plan&quot; note.
+                This is a formatting and synthesis task only. Do not introduce new clinical content.
               </div>
             </div>
           </div>
@@ -154,10 +154,11 @@
         This demo is a companion to the undergraduate thesis named above, which assesses AI-generated
         surgical plans against actual surgical plans for complex head and neck microsurgical
         reconstruction, using independent expert raters. The demo is a way to make the mechanism
-        behind that evaluation visible and interactive. Its prompts are structured-output
-        adaptations of the thesis protocol; the review stage keeps the protocol's role framing,
-        audit criteria, and the same five scoring domains as the thesis rating instrument. It does
-        not report or anticipate any thesis findings; the study is ongoing.
+        behind that evaluation visible and interactive. The demo runs the thesis protocol
+        (Prompts 1 to 3, v2.0): the planner and synthesizer prompts are carried over nearly
+        verbatim, and the review stage keeps the protocol's role framing and audit criteria, with
+        its five scoring domains returned in a machine-readable form so the interface can display
+        them. It does not report or anticipate any thesis findings; the study is ongoing.
       </p>
     </section>
 

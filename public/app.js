@@ -174,6 +174,66 @@
     els.planList.innerHTML = out;
   }
 
+  // ---- v2.0 plan rendering (thesis Prompt 1 output: Markdown sections) ----
+  // Splits a v2.0 plan into its "# Title" sections. Returns [] when the text
+  // has no recognizable sections, so the caller can fall back to plain
+  // markdown rendering.
+  function parsePlanSections(md) {
+    var lines = String(md || '').replace(/\r\n/g, '\n').split('\n');
+    var sections = [];
+    var cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      var h = /^#\s+(.+)$/.exec(t); // exactly one '#': section heading per the contract
+      if (h) {
+        cur = { title: h[1].trim(), body: [] };
+        sections.push(cur);
+      } else if (cur) {
+        cur.body.push(lines[i]);
+      }
+    }
+    return sections;
+  }
+
+  // Renders "- If X, then Y." contingency bullets as the IF-branch boxes the
+  // bundled cases use; lines that do not match render as plain markdown.
+  function renderContingencies(text) {
+    var lines = String(text || '').split('\n');
+    var boxes = '';
+    var rest = [];
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      var m = /^[-*]\s*If\s+(.+?),\s*then\s+(.+?)\.?\s*$/i.exec(t);
+      if (m) {
+        boxes +=
+          '<div class="plan-branch"><div class="branch-cond"><span class="branch-tag">IF</span>' +
+          '<span class="cond-text">' + escapeHtml(m[1]) + '</span></div>' +
+          '<div class="branch-step"><p class="step-desc">' + escapeHtml(m[2]) + '</p></div></div>';
+      } else if (t) {
+        rest.push(lines[i]);
+      }
+    }
+    if (!boxes) return renderMarkdown(text);
+    var restMd = rest.join('\n').trim();
+    return boxes + (restMd ? renderMarkdown(restMd) : '');
+  }
+
+  function renderPlanV2(md) {
+    var sections = parsePlanSections(md);
+    var html = '';
+    if (!sections.length) {
+      html = renderMarkdown(md);
+    } else {
+      for (var i = 0; i < sections.length; i++) {
+        var s = sections[i];
+        var body = s.body.join('\n');
+        html += '<h3 class="plan-sec-title">' + escapeHtml(s.title) + '</h3>';
+        html += /^key contingenc/i.test(s.title) ? renderContingencies(body) : renderMarkdown(body);
+      }
+    }
+    els.planList.innerHTML = '<li class="plan-md">' + html + '</li>';
+  }
+
   // Short labels for the five thesis scoring domains, in prompt order.
   var DOMAIN_LABELS = [
     'Clinical issue captured',
@@ -206,8 +266,14 @@
   }
 
   function renderResults(data) {
-    var plan = (Array.isArray(data.plan) && data.plan.length) ? data.plan : xmlToPlan(data.xml);
-    renderPlan(plan);
+    if (data.plan_markdown) {
+      // Live v2.0 plan: Markdown sections from the thesis planning protocol.
+      renderPlanV2(data.plan_markdown);
+    } else {
+      // Bundled cases (and any legacy result) carry a structured plan array.
+      var plan = (Array.isArray(data.plan) && data.plan.length) ? data.plan : xmlToPlan(data.xml);
+      renderPlan(plan);
+    }
     var accepted = !data.verdict || /accept/i.test(data.verdict);
     els.verdictBadge.textContent = accepted ? 'APPROVED ✓' : 'NEEDS REVISION';
     els.verdictBadge.className = 'verdict-badge ' + (accepted ? 'verdict-approved' : 'verdict-flagged');
@@ -425,7 +491,7 @@
   // Generic stepper narrative for a live run (the live API returns no process).
   function liveProcess() {
     return {
-      draftSteps: ['Reading the patient case…', 'Drafting a structured, conditional plan…', 'Formatting steps and contingencies…'],
+      draftSteps: ['Reading the patient case…', 'Drafting a case-specific plan…', 'Declaring unknowns and contingencies…'],
       reviewChecks: ['Appropriateness', 'Completeness', 'Safety', 'Clinical applicability'],
       round1: { verdict: 'flagged', concern: 'The review board is checking the draft against safety and completeness standards.' },
       round2: { fix: 'The plan is revised to address the board’s concerns before final synthesis.', verdict: 'accept' }
@@ -458,7 +524,7 @@
   // real event within a stage. These never assert a verdict or fabricate a
   // finding; they only describe what the stage is generically doing.
   var NEUTRAL_LINES = {
-    planner: ['Reading the patient case…', 'Structuring the plan and contingencies…'],
+    planner: ['Reading the patient case…', 'Defining the defect and objectives…', 'Weighing alternatives against the primary strategy…', 'Declaring unknowns and assumptions…'],
     review: ['Auditing appropriateness…', 'Auditing completeness…', 'Auditing safety…', 'Auditing clinical applicability…', 'Scoring the five domains…'],
     revision: ['Operating surgeon addressing the board’s concerns…'],
     manager: ['Weighing whether the concern is safety-critical or a formatting note…'],
