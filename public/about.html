@@ -44,67 +44,108 @@
       <p>
         The pipeline mirrors a surgical team rather than a single model call. A plan is drafted,
         checked against explicit clinical criteria, sent back if it falls short, and only then
-        converted into a formal note.
+        converted into a formal note. Each role below is a separate AI agent with its own
+        instructions; the excerpts shown are taken verbatim from the prompts the system runs.
       </p>
 
-      <div class="loop-diagram">
-        <div class="loop-revise">
-          <span class="loop-revise-icon" aria-hidden="true">&#8635;</span>
-          Revision loop
+      <div class="pipe">
+
+        <div class="pipe-stage pipe-edge">
+          <div class="pipe-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
+          </div>
+          <div class="pipe-body">
+            <span class="pipe-kicker">Input</span>
+            <span class="pipe-name">Surgical case</span>
+            <p class="pipe-desc">A synthetic, de-identified head and neck case: diagnosis, staging, key imaging findings, and fitness for surgery.</p>
+          </div>
         </div>
-        <div class="loop-row">
-          <div class="loop-box loop-case">
-            <span class="loop-kicker">Input</span>
-            <span class="loop-name">Case</span>
-          </div>
-          <span class="loop-arrow" aria-hidden="true">&rarr;</span>
-          <div class="loop-box loop-planner">
-            <span class="loop-kicker">Operating surgeon</span>
-            <span class="loop-name">Planner</span>
-          </div>
-          <span class="loop-arrow" aria-hidden="true">&rarr;</span>
-          <div class="loop-box loop-review">
-            <span class="loop-kicker">4-item checklist</span>
-            <span class="loop-name">Review Board</span>
-            <div class="loop-manager">
-              Manager: safety-critical vs. minor
+
+        <div class="pipe-connector">
+          <span class="pipe-down" aria-hidden="true">&darr;</span>
+        </div>
+
+        <div class="prs-frame">
+          <span class="prs-frame-label">Plan &middot; Review &middot; Synthesize</span>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 1</span>
+              <span class="pipe-name">Planner <span class="pipe-sub">expert surgeon</span></span>
+              <p class="pipe-desc">Drafts a structured, conditional surgical plan from the case, with explicit branches for intraoperative findings rather than a single flat sequence.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                You are an expert head and neck reconstructive microsurgeon with 20 years at a leading academic cancer center.
+              </div>
             </div>
           </div>
-          <span class="loop-arrow" aria-hidden="true">&rarr;</span>
-          <div class="loop-box loop-synth">
-            <span class="loop-kicker">Chief resident</span>
-            <span class="loop-name">Synthesizer</span>
+
+          <div class="pipe-connector pipe-connector-loop">
+            <span class="pipe-down" aria-hidden="true">&darr;</span>
+            <span class="pipe-up" aria-hidden="true">&uarr;</span>
+            <span class="loop-label">Revision (if needed)</span>
           </div>
-          <span class="loop-arrow" aria-hidden="true">&rarr;</span>
-          <div class="loop-box loop-output">
-            <span class="loop-kicker">Output</span>
-            <span class="loop-name">Operative Note</span>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.8-3 7.9-7 9-4-1.1-7-4.2-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 2</span>
+              <span class="pipe-name">Reviewer <span class="pipe-sub">surgical board</span></span>
+              <p class="pipe-desc">Checks the draft against four criteria: oncologic soundness, reconstructive soundness, contingency planning, and clarity. It accepts the plan or returns concerns.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                Evaluate for safety, completeness, standard of care. Be strict but pragmatic.
+              </div>
+              <div class="pipe-manager">
+                <strong>Manager.</strong> If the board rejects, a separate check decides whether the
+                objection is safety-critical or a minor formatting note, so the loop is strict on
+                substance and not on style.
+              </div>
+            </div>
+          </div>
+
+          <div class="pipe-connector">
+            <span class="pipe-down" aria-hidden="true">&darr;</span>
+            <span class="accept-label">Accepted</span>
+          </div>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4L8 20l-5 1 1-5z"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 3</span>
+              <span class="pipe-name">Synthesizer <span class="pipe-sub">chief resident</span></span>
+              <p class="pipe-desc">Converts the approved plan into a formal operative note: preoperative plan, ablation, reconstruction, and key contingencies.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                Role: Chief Surgical Resident. Convert the approved structured plan into a formal &quot;Surgical Operative Plan&quot; note.
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <ol class="loop-steps">
-        <li>
-          <strong>Planner (operating surgeon)</strong> drafts a structured, conditional surgical
-          plan from the patient case, with explicit branches for clinical uncertainties rather
-          than a single flat sequence.
-        </li>
-        <li>
-          <strong>Surgical Review Board</strong> evaluates the plan against four criteria,
-          oncologic soundness, reconstructive soundness, contingency planning, and clarity, then
-          either accepts it or sends it back with concerns. A bounded number of revision rounds
-          is allowed before the loop is forced to a decision.
-        </li>
-        <li>
-          <strong>Manager</strong> distinguishes safety-critical rejections from minor formatting
-          or wording objections, so the loop is strict on substance and not on style.
-        </li>
-        <li>
-          <strong>Synthesizer (chief resident)</strong> converts the approved plan into a formal
-          operative note, organized as a preoperative plan, an intraoperative ablation plan, an
-          intraoperative reconstruction plan, and key contingencies.
-        </li>
-      </ol>
+        <div class="pipe-connector">
+          <span class="pipe-down" aria-hidden="true">&darr;</span>
+        </div>
+
+        <div class="pipe-stage pipe-edge pipe-output">
+          <div class="pipe-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2"/><path d="M9 10h6M9 14h6M9 18h4"/></svg>
+          </div>
+          <div class="pipe-body">
+            <span class="pipe-kicker">Output</span>
+            <span class="pipe-name">Operative note</span>
+            <p class="pipe-desc">A formal, reviewed surgical plan, shown alongside the full review trace that produced it.</p>
+          </div>
+        </div>
+
+      </div>
     </section>
 
     <section class="card">
@@ -119,30 +160,13 @@
     </section>
 
     <section class="card">
-      <h2>What is real and what is simulated</h2>
-      <ul class="honesty-list">
-        <li>
-          <strong>Live generation</strong> calls a general-purpose large language model, and the
-          review trace shown for that run is the pipeline's actual output, not a scripted or
-          pre-written result.
-        </li>
-        <li>
-          <strong>The bundled case library</strong> is fully synthetic and de-identified; no real
-          patient data is used anywhere in this demo.
-        </li>
-        <li>
-          <strong>The offline demo</strong> plays a pre-prepared review sequence for a bundled
-          synthetic case, so the demonstration works end to end without a network connection.
-        </li>
-      </ul>
-    </section>
-
-    <section class="card">
       <h2>Scope and limitations</h2>
       <p>
         This is a research prototype built for academic evaluation. It is not a medical device and
         is not intended for clinical use. Its outputs, including the structured plans and operative
-        notes, are illustrative rather than clinically validated recommendations.
+        notes, are illustrative rather than clinically validated recommendations. Every case in the
+        demo is synthetic; when live generation runs, the review trace shown is the pipeline's
+        actual output.
       </p>
     </section>
 

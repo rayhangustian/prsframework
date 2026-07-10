@@ -35,128 +35,141 @@
 }
 .about-main .card p:last-child { margin-bottom: 0; }
 
-.loop-steps, .honesty-list {
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.loop-steps li, .honesty-list li {
-  position: relative;
-  padding: 10px 0 10px 22px;
-  font-size: 16px;
-  line-height: 1.65;
-  color: var(--ink-soft);
-  border-top: 1px solid var(--line);
-}
-.loop-steps li:first-child, .honesty-list li:first-child { border-top: none; }
-.loop-steps li::before, .honesty-list li::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 20px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--teal);
-}
-.loop-steps li strong, .honesty-list li strong { color: var(--ink); }
-
-/* ---------------- Loop diagram ---------------- */
-.loop-diagram {
-  margin: 22px 0 8px;
+/* ---------------- Vertical pipeline diagram ---------------- */
+.pipe {
+  margin: 24px auto 8px;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
 }
 
-.loop-revise {
-  align-self: center;
-  margin: 0 0 -1px;
-  padding: 5px 16px;
-  border: 2px solid var(--flag);
-  border-bottom: none;
-  border-radius: 10px 10px 0 0;
-  background: var(--flag-tint);
-  color: var(--flag);
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: .2px;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.loop-revise-icon { font-size: 14px; line-height: 1; }
-
-.loop-row {
+.pipe-stage {
   display: flex;
-  align-items: stretch;
-  justify-content: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  border-top: 2px solid var(--line);
-  padding-top: 16px;
-}
-
-.loop-box {
-  flex: 1 1 130px;
-  min-width: 108px;
-  max-width: 168px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  text-align: center;
-  padding: 14px 10px;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
-.loop-kicker {
+
+.pipe-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--teal-tint);
+  border: 1px solid var(--teal-line);
+  color: var(--teal-deep);
+}
+.pipe-icon svg { width: 22px; height: 22px; }
+
+.pipe-body { min-width: 0; }
+.pipe-kicker {
+  display: block;
   font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
+  color: var(--teal-deep);
+  margin-bottom: 1px;
+}
+.pipe-name { font-size: 16px; font-weight: 700; color: var(--ink); }
+.pipe-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-faint);
+  margin-left: 4px;
+}
+.pipe-desc {
+  margin: 6px 0 0;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+  color: var(--ink-soft);
+}
+
+/* Verbatim prompt excerpt chip */
+.pipe-quote {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f4f7f8;
+  border-left: 3px solid var(--teal-line);
+  border-radius: 0 8px 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.pipe-quote-label {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+
+.pipe-manager {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--teal-line);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.pipe-manager strong { color: var(--ink); }
+
+/* Connectors between stages */
+.pipe-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 2px 0;
+}
+.pipe-down, .pipe-up { font-size: 20px; line-height: 1; }
+.pipe-down { color: var(--ink-faint); }
+.pipe-up { color: var(--flag); }
+.loop-label { font-size: 12px; font-weight: 700; color: var(--flag); }
+.accept-label { font-size: 12px; font-weight: 700; color: var(--approve); }
+
+/* Soft frame around the three PRS prompts, echoing the thesis slide */
+.prs-frame {
+  position: relative;
+  background: var(--teal-tint);
+  border: 1px solid var(--teal-line);
+  border-radius: 16px;
+  padding: 40px 14px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.prs-frame-label {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .7px;
   color: var(--teal-deep);
 }
-.loop-name { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.prs-frame .pipe-stage { border-color: var(--teal-line); }
+.prs-frame .pipe-connector { min-height: 32px; }
 
-.loop-planner, .loop-review { border-color: var(--teal-line); background: var(--teal-tint); }
-.loop-output { border-color: var(--approve-line); background: var(--approve-tint); }
-
-.loop-manager {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--teal-line);
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--ink-faint);
-}
-
-.loop-arrow {
-  align-self: center;
-  font-size: 20px;
-  color: var(--ink-faint);
-  flex: 0 0 auto;
-  padding: 0 2px;
-}
-
-/* Stack vertically on narrow / projector-crop widths */
-@media (max-width: 680px) {
-  .loop-row {
-    flex-direction: column;
-    align-items: center;
-  }
-  .loop-box { max-width: 260px; width: 100%; }
-  .loop-arrow { transform: rotate(90deg); }
-  .loop-revise {
-    border-bottom: 2px solid var(--flag);
-    border-radius: 999px;
-  }
-}
+/* Input and output stand slightly apart from the AI stages */
+.pipe-edge .pipe-icon { background: #f4f7f8; border-color: var(--line); color: var(--ink-soft); }
+.pipe-output .pipe-icon { background: var(--approve-tint); border-color: var(--approve-line); color: var(--approve); }
 
 @media (max-width: 620px) {
-  .about-main .card p, .loop-steps li, .honesty-list li { font-size: 15.5px; }
+  .about-main .card p { font-size: 15.5px; }
+  .pipe-stage { padding: 14px; gap: 12px; }
+  .pipe-icon { width: 36px; height: 36px; }
+  .pipe-icon svg { width: 19px; height: 19px; }
 }
