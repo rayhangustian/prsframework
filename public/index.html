@@ -46,7 +46,7 @@
       </div>
       <div class="live-row">
         <input id="passcode" class="passcode" type="password" autocomplete="off"
-          placeholder="Access code (only if required)" />
+          placeholder="Access code (required for live generation)" />
         <p class="live-note" id="live-note" role="status" aria-live="polite"></p>
       </div>
     </section>
@@ -78,6 +78,7 @@
           <h2>Surgical Review Board</h2>
           <span class="verdict-badge verdict-approved" id="verdict-badge">APPROVED ✓</span>
         </div>
+        <div class="score-strip" id="review-scores" hidden></div>
         <blockquote class="review-comment" id="review-comment"></blockquote>
       </div>
 

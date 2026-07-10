@@ -19,6 +19,7 @@
     caseText: document.getElementById('case-text'),
     caseHint: document.getElementById('case-hint'),
     thesisTitle: document.getElementById('thesis-title'),
+    reviewScores: document.getElementById('review-scores'),
     stepperCard: document.getElementById('stepper-card'),
     stepperTitle: document.getElementById('stepper-title'),
     liveBadge: document.getElementById('live-badge'),
@@ -173,12 +174,49 @@
     els.planList.innerHTML = out;
   }
 
+  // Short labels for the five thesis scoring domains, in prompt order.
+  var DOMAIN_LABELS = [
+    'Clinical issue captured',
+    'Procedure choice',
+    'Alternatives',
+    'Comprehensiveness',
+    'No fabricated options'
+  ];
+
+  // Builds the row of five domain-score chips. Returns null unless scores is
+  // a well-formed array of five 1-5 integers (bundled cases have none).
+  function buildScoreChips(scores) {
+    if (!Array.isArray(scores) || scores.length !== DOMAIN_LABELS.length) return null;
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < DOMAIN_LABELS.length; i++) {
+      var n = scores[i];
+      if (!(n >= 1 && n <= 5)) return null;
+      var chip = document.createElement('span');
+      chip.className = 'score-chip' + (n <= 2 ? ' score-low' : '');
+      var lab = document.createElement('span');
+      lab.textContent = DOMAIN_LABELS[i];
+      var val = document.createElement('span');
+      val.className = 'score-val';
+      val.textContent = n + '/5';
+      chip.appendChild(lab);
+      chip.appendChild(val);
+      frag.appendChild(chip);
+    }
+    return frag;
+  }
+
   function renderResults(data) {
     var plan = (Array.isArray(data.plan) && data.plan.length) ? data.plan : xmlToPlan(data.xml);
     renderPlan(plan);
     var accepted = !data.verdict || /accept/i.test(data.verdict);
     els.verdictBadge.textContent = accepted ? 'APPROVED ✓' : 'NEEDS REVISION';
     els.verdictBadge.className = 'verdict-badge ' + (accepted ? 'verdict-approved' : 'verdict-flagged');
+    if (els.reviewScores) {
+      els.reviewScores.innerHTML = '';
+      var chips = buildScoreChips(data.scores);
+      if (chips) { els.reviewScores.appendChild(chips); els.reviewScores.hidden = false; }
+      else { els.reviewScores.hidden = true; }
+    }
     els.reviewComment.textContent = data.comment || data.reason || '';
     els.opnote.innerHTML = renderMarkdown(data.markdown || '');
     els.results.hidden = false;
@@ -388,7 +426,7 @@
   function liveProcess() {
     return {
       draftSteps: ['Reading the patient case…', 'Drafting a structured, conditional plan…', 'Formatting steps and contingencies…'],
-      reviewChecks: ['Oncologic soundness', 'Reconstructive soundness', 'Contingency planning', 'Clarity & logic'],
+      reviewChecks: ['Appropriateness', 'Completeness', 'Safety', 'Clinical applicability'],
       round1: { verdict: 'flagged', concern: 'The review board is checking the draft against safety and completeness standards.' },
       round2: { fix: 'The plan is revised to address the board’s concerns before final synthesis.', verdict: 'accept' }
     };
@@ -421,7 +459,7 @@
   // finding; they only describe what the stage is generically doing.
   var NEUTRAL_LINES = {
     planner: ['Reading the patient case…', 'Structuring the plan and contingencies…'],
-    review: ['Reviewing oncologic soundness…', 'Reviewing reconstructive soundness…', 'Checking contingency planning…', 'Checking clarity and logic…'],
+    review: ['Auditing appropriateness…', 'Auditing completeness…', 'Auditing safety…', 'Auditing clinical applicability…', 'Scoring the five domains…'],
     revision: ['Operating surgeon addressing the board’s concerns…'],
     manager: ['Weighing whether the concern is safety-critical or a formatting note…'],
     synth: ['Composing the formal operative note…']
@@ -592,6 +630,13 @@
             var rstage = reviewStages[ev.round];
             if (rstage) {
               var accepted = /accept/i.test(ev.verdict || '');
+              var chips = buildScoreChips(ev.scores);
+              if (chips) {
+                var strip = document.createElement('div');
+                strip.className = 'score-strip';
+                strip.appendChild(chips);
+                rstage.body.appendChild(strip);
+              }
               if (accepted) {
                 addVerdict(rstage, 'approved', ev.round === 1 ? 'Approved on first review' : 'Approved ✓');
                 setStageState(rstage, 'done');

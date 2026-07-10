@@ -96,10 +96,10 @@
             <div class="pipe-body">
               <span class="pipe-kicker">Prompt 2</span>
               <span class="pipe-name">Reviewer <span class="pipe-sub">surgical board</span></span>
-              <p class="pipe-desc">Checks the draft against four criteria: oncologic soundness, reconstructive soundness, contingency planning, and clarity. It accepts the plan or returns concerns.</p>
+              <p class="pipe-desc">Audits the draft for appropriateness, completeness, safety, and clinical applicability, and scores it on the same five domains and the same 1 to 5 scale used by the thesis raters. It accepts the plan or returns concerns.</p>
               <div class="pipe-quote">
                 <span class="pipe-quote-label">From the actual prompt</span>
-                Evaluate for safety, completeness, standard of care. Be strict but pragmatic.
+                You are a surgical review board of senior reconstructive microsurgeons reviewing the proposed plan for this case. Your task is to audit the planner output for appropriateness, completeness, safety, and clinical applicability.
               </div>
               <div class="pipe-manager">
                 <strong>Manager.</strong> If the board rejects, a separate check decides whether the
@@ -154,8 +154,10 @@
         This demo is a companion to the undergraduate thesis named above, which assesses AI-generated
         surgical plans against actual surgical plans for complex head and neck microsurgical
         reconstruction, using independent expert raters. The demo is a way to make the mechanism
-        behind that evaluation visible and interactive. It does not report or anticipate any thesis
-        findings; the study is ongoing.
+        behind that evaluation visible and interactive. Its prompts are structured-output
+        adaptations of the thesis protocol; the review stage keeps the protocol's role framing,
+        audit criteria, and the same five scoring domains as the thesis rating instrument. It does
+        not report or anticipate any thesis findings; the study is ongoing.
       </p>
     </section>
 

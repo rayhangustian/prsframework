@@ -54,7 +54,9 @@ app.post('/review', async (req, res) => {
     }, llmOpts(req.body));
     const v = (content.match(/<SurgicalBoard_Verify>(.*?)<\/SurgicalBoard_Verify>/i) || [, 'reject'])[1];
     const c = (content.match(/<Feedback_Comment>([\s\S]*?)<\/Feedback_Comment>/i) || [, ''])[1].trim();
-    res.json({ verdict: /accept/i.test(v || '') ? 'accept' : 'reject', comment: c });
+    const sRaw = (content.match(/<Domain_Scores>([^<]*)<\/Domain_Scores>/i) || [, ''])[1];
+    const nums = sRaw.split(/[,\s]+/).map((n) => parseInt(n, 10)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 5);
+    res.json({ verdict: /accept/i.test(v || '') ? 'accept' : 'reject', comment: c, scores: nums.length === 5 ? nums : null });
   } catch (e) { console.error(e); res.status(500).json({ error: 'review_failed' }); }
 });
 
