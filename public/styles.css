@@ -101,7 +101,8 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; }
   background: #b3c4c8; color: #eef2f3; cursor: not-allowed; box-shadow: none;
 }
 .btn-lg { font-size: 16px; padding: 14px 26px; width: 100%; }
-.actions { margin-top: 16px; }
+.actions { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.actions .btn-ghost { align-self: flex-start; }
 
 /* Case textarea */
 .case-text {
@@ -209,6 +210,58 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; }
   display: block; margin-bottom: 2px;
 }
 
+/* Manager-override note: visually distinct from board concerns (red) and
+   revision fixes (teal), so the audience can tell who said what. */
+.manager-text {
+  margin: 6px 0 2px; padding: 10px 14px; font-size: 13.5px; line-height: 1.55;
+  background: #fbf6e1; border-left: 3px solid var(--gold); border-radius: 6px;
+  color: #6b5900; opacity: 0; animation: subin .35s ease forwards;
+}
+.manager-text .manager-label {
+  font-weight: 700; text-transform: uppercase; letter-spacing: .3px; font-size: 11.5px;
+  display: block; margin-bottom: 2px;
+}
+
+/* v2.0 plan sections (live results follow the thesis Prompt 1 contract) */
+.plan-md { list-style: none; }
+.plan-md .plan-sec-title {
+  margin: 18px 0 6px; font-size: 12.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px; color: var(--teal-deep);
+}
+.plan-md .plan-sec-title:first-child { margin-top: 2px; }
+.plan-md p { margin: 6px 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.plan-md ul, .plan-md ol { margin: 6px 0; padding-left: 22px; }
+.plan-md li { margin: 4px 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.plan-md strong { color: var(--ink); }
+.plan-md .plan-branch { margin: 8px 0; }
+
+/* Five-domain Likert scores from the review board (thesis instrument).
+   Shown in the live trace and on the results card; hidden for bundled cases. */
+.score-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 8px 0 4px;
+}
+.score-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--teal-tint); border: 1px solid var(--teal-line);
+  font-size: 11.5px; font-weight: 600; color: var(--teal-deep);
+  white-space: nowrap;
+}
+.score-chip .score-val { font-weight: 700; color: var(--ink); }
+.score-chip.score-low {
+  background: var(--flag-tint); border-color: var(--flag-line); color: var(--flag);
+}
+.score-chip.score-low .score-val { color: var(--flag); }
+
+/* Live badge: shown only while the stepper is driven by real pipeline events
+   (not the scripted fallback animation or the offline replay). */
+.live-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--teal-deep); background: var(--teal-tint); border: 1px solid var(--teal-line);
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+
 /* Results reveal */
 #results { animation: fade-up .4s ease both; }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -300,7 +353,7 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; }
 /* Live-generation row: optional access code + status note */
 .live-row {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
 }
 .passcode {
   flex: 0 1 240px; min-width: 160px;
@@ -320,3 +373,12 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; }
   .brand-text { text-align: left; }
   .card { padding: 18px 16px; }
 }
+
+/* Header link to the About page (thesis bar becomes a two-column row) */
+.thesis-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.about-link { margin: 0; flex: 0 0 auto; }
+.about-link a {
+  color: var(--teal-deep); font-weight: 600; font-size: 13px;
+  text-decoration: none; white-space: nowrap;
+}
+.about-link a:hover { text-decoration: underline; }

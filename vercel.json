@@ -4,6 +4,7 @@
   "buildCommand": "node scripts/build-cases.mjs",
   "outputDirectory": "public",
   "functions": {
-    "api/generate.js": { "maxDuration": 60 }
+    "api/generate.js": { "maxDuration": 60 },
+    "api/generate-stream.js": { "maxDuration": 60 }
   }
 }

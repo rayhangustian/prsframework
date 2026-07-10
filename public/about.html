@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About the PRS Framework</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="about.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="cobrand">
+        <img class="logo" src="assets/fkui-logo.png" alt="Faculty of Medicine, Universitas Indonesia" />
+        <span class="logo-divider" aria-hidden="true"></span>
+        <img class="logo" src="assets/rscm-logo.png" alt="RSUPN Dr. Cipto Mangunkusumo" />
+      </div>
+      <div class="brand-text">
+        <h1>About the PRS Framework</h1>
+        <p class="tagline">Plan&ndash;Review&ndash;Synthesize surgical planning demo</p>
+      </div>
+    </div>
+    <div class="wrap thesis-bar">
+      <p class="thesis-title">Assessing the Clinical Judgement of ChatGPT in the Planning of Complex Head and Neck Microsurgical Reconstructive Procedure</p>
+      <p class="back-link"><a href="index.html">&larr; Back to the demo</a></p>
+    </div>
+  </header>
+
+  <main class="wrap about-main">
+
+    <section class="card">
+      <h2>The question</h2>
+      <p>
+        The interesting question is not whether an AI can draft a surgical plan. Drafting is easy.
+        The interesting question is whether that plan can be made safe and trustworthy enough to be
+        useful, which requires more than a single generation step. This framework explores that
+        question by putting a drafted plan through a structured, automated review before it is
+        finalized, rather than presenting a first draft as if it were a final answer.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>How the loop works</h2>
+      <p>
+        The pipeline mirrors a surgical team rather than a single model call. A plan is drafted,
+        checked against explicit clinical criteria, sent back if it falls short, and only then
+        converted into a formal note. Each role below is a separate AI agent with its own
+        instructions; the excerpts shown are taken verbatim from the prompts the system runs.
+      </p>
+
+      <div class="pipe">
+
+        <div class="pipe-stage pipe-edge">
+          <div class="pipe-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
+          </div>
+          <div class="pipe-body">
+            <span class="pipe-kicker">Input</span>
+            <span class="pipe-name">Surgical case</span>
+            <p class="pipe-desc">A synthetic, de-identified head and neck case: diagnosis, staging, key imaging findings, and fitness for surgery.</p>
+          </div>
+        </div>
+
+        <div class="pipe-connector">
+          <span class="pipe-down" aria-hidden="true">&darr;</span>
+        </div>
+
+        <div class="prs-frame">
+          <span class="prs-frame-label">Plan &middot; Review &middot; Synthesize</span>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 1</span>
+              <span class="pipe-name">Planner <span class="pipe-sub">operating surgeon</span></span>
+              <p class="pipe-desc">Drafts a case-specific plan under the protocol's strict rules: use only stated case facts, justify the primary strategy against alternatives, and declare unknowns instead of guessing.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                If important information is missing, do not guess. State it under &quot;Unknowns / Clarifications Needed&quot; and explain why it matters.
+              </div>
+            </div>
+          </div>
+
+          <div class="pipe-connector pipe-connector-loop">
+            <span class="pipe-down" aria-hidden="true">&darr;</span>
+            <span class="pipe-up" aria-hidden="true">&uarr;</span>
+            <span class="loop-label">Revision (if needed)</span>
+          </div>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.8-3 7.9-7 9-4-1.1-7-4.2-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 2</span>
+              <span class="pipe-name">Reviewer <span class="pipe-sub">surgical board</span></span>
+              <p class="pipe-desc">Audits the draft for appropriateness, completeness, safety, and clinical applicability, and scores it on the same five domains and the same 1 to 5 scale used by the thesis raters. It accepts the plan or returns concerns.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                You are a surgical review board of senior reconstructive microsurgeons reviewing the proposed plan for this case. Your task is to audit the planner output for appropriateness, completeness, safety, and clinical applicability.
+              </div>
+              <div class="pipe-manager">
+                <strong>Manager.</strong> If the board rejects, a separate check decides whether the
+                objection is safety-critical or a minor formatting note, so the loop is strict on
+                substance and not on style.
+              </div>
+            </div>
+          </div>
+
+          <div class="pipe-connector">
+            <span class="pipe-down" aria-hidden="true">&darr;</span>
+            <span class="accept-label">Accepted</span>
+          </div>
+
+          <div class="pipe-stage">
+            <div class="pipe-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4L8 20l-5 1 1-5z"/></svg>
+            </div>
+            <div class="pipe-body">
+              <span class="pipe-kicker">Prompt 3</span>
+              <span class="pipe-name">Synthesizer <span class="pipe-sub">chief resident</span></span>
+              <p class="pipe-desc">Converts the accepted plan into a concise preoperative planning note. Formatting only: it may not add new clinical content, and it must preserve any declared uncertainty.</p>
+              <div class="pipe-quote">
+                <span class="pipe-quote-label">From the actual prompt</span>
+                This is a formatting and synthesis task only. Do not introduce new clinical content.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pipe-connector">
+          <span class="pipe-down" aria-hidden="true">&darr;</span>
+        </div>
+
+        <div class="pipe-stage pipe-edge pipe-output">
+          <div class="pipe-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2"/><path d="M9 10h6M9 14h6M9 18h4"/></svg>
+          </div>
+          <div class="pipe-body">
+            <span class="pipe-kicker">Output</span>
+            <span class="pipe-name">Operative note</span>
+            <p class="pipe-desc">A formal, reviewed surgical plan, shown alongside the full review trace that produced it.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Relation to the thesis</h2>
+      <p>
+        This demo is a companion to the undergraduate thesis named above, which assesses AI-generated
+        surgical plans against actual surgical plans for complex head and neck microsurgical
+        reconstruction, using independent expert raters. The demo is a way to make the mechanism
+        behind that evaluation visible and interactive. The demo runs the thesis protocol
+        (Prompts 1 to 3, v2.0): the planner and synthesizer prompts are carried over nearly
+        verbatim, and the review stage keeps the protocol's role framing and audit criteria, with
+        its five scoring domains returned in a machine-readable form so the interface can display
+        them. It does not report or anticipate any thesis findings; the study is ongoing.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Scope and limitations</h2>
+      <p>
+        This is a research prototype built for academic evaluation. It is not a medical device and
+        is not intended for clinical use. Its outputs, including the structured plans and operative
+        notes, are illustrative rather than clinically validated recommendations. Every case in the
+        demo is synthetic; when live generation runs, the review trace shown is the pipeline's
+        actual output.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      Muhammad Rayhan Gustian Habibie, Faculty of Medicine, Universitas Indonesia.
+    </div>
+  </footer>
+</body>
+</html>
